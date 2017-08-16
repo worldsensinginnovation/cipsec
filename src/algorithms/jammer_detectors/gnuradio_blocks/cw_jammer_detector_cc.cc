@@ -1,0 +1,31 @@
+
+#include <ctime>
+
+#include "cw_jammer_detector_cc.h"
+
+#include <sstream>
+
+#include <boost/filesystem.hpp>
+
+#include <gnuradio/io_signature.h>
+
+#include <gnuradio/filter/firdes.h>
+
+#include <glog/logging.h>
+
+#include <volk/volk.h>
+
+#include <volk_gnsssdr/volk_gnsssdr.h>
+
+#include <gnuradio/fft/window.h>
+
+#include "jammer_detector_msg.h"
+
+#include "sdr_signal_processing.h"
+
+using google::LogMessage;
+cw_jammer_detector_cc_sptr cw_jammer_make_detector_cc(long fs_in_hz,unsigned int block_samples,unsigned int A,unsigned int B,unsigned int max_dwells,bool dump,std::string dump_filename){return cw_jammer_detector_cc_sptr(new cw_jammer_detector_cc(fs_in_hz, block_samples, A, B,max_dwells, dump, dump_filename));}cw_jammer_detector_cc::cw_jammer_detector_cc(long fs_in_hz,unsigned int block_samples,unsigned int A,unsigned int B,unsigned int max_dwells,bool dump,std::string dump_filename) :gr::block("cw_jammer_detector_cc",gr::io_signature::make(1, 1, sizeof(gr_complex) * block_samples),gr::io_signature::make(0, 0, sizeof(gr_complex) * block_samples) ){this->message_port_register_out(pmt::mp("jammers"));d_sample_counter = 0;    d_active = false;d_state = 0;d_rf_freq = 0.0;d_fs_in = fs_in_hz;d_block_samples = block_samples;d_noise_floor = 0.0;d_test_statistics = 0.0;d_test_statistics_acum = 0.0;d_threshold = 0.0;d_k = B;d_A = A;d_B = B;d_max_dwells = max_dwells;d_dwell_counter = 0;d_spectrum = static_cast<float*>(volk_malloc(d_block_samples * sizeof(float), volk_get_alignment()));d_spectrum_no_dc = static_cast<float*>(volk_malloc((d_block_samples-1) * sizeof(float), volk_get_alignment()));d_dump = dump;d_dump_filename = dump_filename;}cw_jammer_detector_cc::~cw_jammer_detector_cc(){volk_free(d_spectrum_no_dc);volk_free(d_spectrum);if (d_dump){d_dump_file.close();}}void cw_jammer_detector_cc::init(){d_state=0;}void cw_jammer_detector_cc::set_state(int state){d_state = state;}int cw_jammer_detector_cc::general_work(int noutput_items,gr_vector_int &ninput_items, gr_vector_const_void_star &input_items,gr_vector_void_star &output_items __attribute__((unused))){switch (d_state){case 0:{if (d_active){d_state = 1;}d_sample_counter += d_block_samples * ninput_items[0]; DLOG(INFO) << "CW jammer detector standby. Consumed " << ninput_items[0] << " items";consume_each(ninput_items[0]);break;}case 1:{uint32_t indext = 0;const gr_complex *in = (const gr_complex *)input_items[0]; DLOG(INFO) <<"CW jammer detector running at samplestamp: "<< d_sample_counter << ", threshold: "<< d_threshold;d_dwell_counter += 1;gr::filter::firdes::win_type window_type = gr::filter::firdes::WIN_RECTANGULAR;periodogram(d_spectrum, in, d_block_samples, window_type);memcpy(d_spectrum_no_dc, d_spectrum, sizeof(float) * d_block_samples);d_spectrum_no_dc[0] = 0.0;volk_gnsssdr_32f_index_max_32u(&indext, d_spectrum_no_dc, d_block_samples);if ((indext == 0) || (indext == 1) || (indext == 2)){volk_32f_accumulator_s32f(&d_noise_floor, &d_spectrum_no_dc[indext+3], d_block_samples-5);}else if ((indext == d_block_samples-3) || (indext == d_block_samples-2) || (indext == d_block_samples-1)){volk_32f_accumulator_s32f(&d_noise_floor, &d_spectrum_no_dc[indext-d_block_samples+3], d_block_samples-5);}
+else
+{float prev;float post;volk_32f_accumulator_s32f(&prev, d_spectrum_no_dc, indext-2);volk_32f_accumulator_s32f(&post, &d_spectrum_no_dc[indext+3], d_block_samples-indext-3);d_noise_floor = prev + post;}d_noise_floor /= (d_block_samples-5);d_test_statistics = d_spectrum_no_dc[indext]/d_noise_floor;d_test_statistics_acum += d_test_statistics;DLOG(INFO) << "CW jammer detector test statistics done. Consumed "<< ninput_items[0] <<" items.";if (d_test_statistics > d_threshold){DLOG(INFO) << "CW jammer d_test_statistics > d_threshold";DLOG(INFO) << "RF center freq " << d_rf_freq;DLOG(INFO) << "sample_stamp " << d_sample_counter;DLOG(INFO) << "index " << indext;DLOG(INFO) << "Maximum " << d_spectrum_no_dc[indext];DLOG(INFO) << "Noise Floor " << d_noise_floor;d_k += 1;if (d_k == d_A){d_k = d_B;d_state = 2; d_test_statistics_acum /= d_dwell_counter;d_dwell_counter = 0;}}
+else
+{d_k -= 1;if ((d_k == 0) || (d_dwell_counter == d_max_dwells)){d_k = d_B;d_state = 3; d_test_statistics_acum /= d_dwell_counter;d_dwell_counter = 0;}}d_sample_counter += d_block_samples * ninput_items[0]; consume_each(1);break;}case 2:{DLOG(INFO) << "CW jammer positive detection";DLOG(INFO) << "RF center freq " << d_rf_freq;DLOG(INFO) << "sample_stamp " << d_sample_counter;DLOG(INFO) << "test statistics value " << d_test_statistics;DLOG(INFO) << "test statistics threshold " << d_threshold;d_active = false;d_state = 0;d_sample_counter += d_block_samples * ninput_items[0]; jammer.jammer_type = 3;jammer.jnr_db = 10.0*log10(d_test_statistics_acum); jammer.rf_freq_hz = d_rf_freq;jammer.test_value = d_test_statistics_acum;jammer.sample_counter = d_sample_counter;jammer.timestamp = time(0);jammer.detection = true;std::shared_ptr<jammer_detector_msg> tmp_obj = std::make_shared<jammer_detector_msg>(jammer);this->message_port_pub(pmt::mp("jammers"), pmt::make_any(tmp_obj));DLOG(INFO) << "cw jammer detector positive message sended. Consumed " << ninput_items[0] << " items.";consume_each(ninput_items[0]);break;}case 3:{DLOG(INFO) << "CW jammer negative detection";DLOG(INFO) << "RF center freq " << d_rf_freq;DLOG(INFO) << "sample_stamp " << d_sample_counter;DLOG(INFO) << "test statistics value " << d_test_statistics;DLOG(INFO) << "test statistics threshold " << d_threshold;d_active = false;d_state = 0;d_sample_counter += d_block_samples * ninput_items[0]; jammer.jammer_type=3;jammer.jnr_db = 10.0*log10(0.0); jammer.rf_freq_hz=d_rf_freq;jammer.test_value=d_test_statistics_acum;jammer.sample_counter=d_sample_counter;jammer.timestamp= time(0);jammer.detection=false;std::shared_ptr<jammer_detector_msg> tmp_obj = std::make_shared<jammer_detector_msg>(jammer);this->message_port_pub(pmt::mp("jammers"), pmt::make_any(tmp_obj));DLOG(INFO) << "CW jammer detector negative message sended. Consumed " << ninput_items[0] << " items.";consume_each(ninput_items[0]);break;}}return noutput_items;}

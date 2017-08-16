@@ -1,0 +1,517 @@
+# Copyright (C) 2016  (see AUTHORS file for a list of contributors)
+#
+# This file is part of SDRJD.
+#
+# SDRJD is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# SDRJD is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with SDRJD. If not, see <http://www.gnu.org/licenses/>.
+#
+
+/*! \mainpage
+
+Welcome to SDRJD!
+
+SDRJD is an open-source <a href="https://en.wikipedia.org/wiki/Software-defined_radio" target="_blank"> Software-Defined Radio </a> <a href="https://en.wikipedia.org/wiki/Radio_jamming" target="_blank"> Jammer Detector </a> which can operate in a variety of computer platforms. The software has the ability to scan a frequency range defined by the user and detect various types of RF jammers.
+
+
+\section toc Contents
+\li \ref overview
+\li \ref build
+\li \ref using_sdrjd
+\li \ref control_plane
+\li \ref signal_processing
+\li \ref license
+
+More details on SDRJD signal processing blocks:
+
+\li \ref signal_source
+\li \ref signal_conditioner
+\li \ref jammer_detectors
+    <ul>
+      <li> \ref pulsed </li>
+      <li> \ref wideband</li>
+      <li> \ref continuous_wave</li>
+      <li> \ref chirp
+    </ul>
+
+
+\section overview Overview
+SDRJD provides an interface to different suitable RF front-ends and implements all the receiver chain up to the detection solution. 
+Its design allows any kind of customization, including interchangeability of signal sources, signal processing algorithms, 
+interoperability with other systems, output formats, and offers interfaces to all the intermediate signals, parameters and variables. 
+The goal is to write efficient and truly reusable code, easy to read and maintain, with fewer bugs, and producing highly optimized executables 
+in a variety of hardware platforms and operating systems. In that sense, the challenge consists of defining a gentle balance within level 
+of abstraction and performance. SDRJD runs in a personal computer and provides interfaces through USB to a variety of commercially available RF front-ends, adapting the processing algorithms to different sampling frequencies, intermediate
+ frequencies and sample resolutions. 
+
+\image html overview.png
+\image latex overview.png "Overview" width=16cm
+
+As signal inputs, it accepts:
+\li Raw data file captured with a data grabber (digitized at some intermediate frequency or directly at baseband).
+\li Any suitable RF configuration that can be driven by the Universal Software Radio Peripheral Hardware Driver (<a href="http://files.ettus.com/uhd_docs/manual/html/" target="_blank">UHD</a>).
+This includes all current and future <a href="http://www.ettus.com/">Ettus Research</a> products.
+\li Any suitable RF configuration that can be driven by the <a href="http://sdr.osmocom.org/trac/wiki/GrOsmoSDR" target="blank">Osmocomm SDR software</a> like the <a href="http://greatscottgadgets.com/hackrf/" target="blank">HackRF One</a>.
+\li Experimentally, with some USB DVB-T dongles based on the Realtek RTL2832U chipset.
+
+As outputs, it provides:
+\li Dump of intermediate signals (configurable by the user).
+\li The processing is logged at a  system temporary folder (usually, <tt>/tmp</tt>).
+\li Detection messages are send in linux queues.
+\li Also detection status is logged in a log file at <tt>sdrjd/install</tt> folder.
+
+
+\section build Building SDRJD  
+
+In principle, SDRJD can be built in any Unix-like system. In practice, it depends on being able to install all the required dependencies. See the README.txt file for details about the project's
+dependencies and build process. Mainly, it consists on installing <a href="http://gnuradio.org/" target="_blank">GNU Radio</a> plus some few more libraries:
+
+\li <a href="http://code.google.com/p/gflags/" target="_blank">Gflags</a>, a library that implements commandline flags processing,
+\li <a href="http://code.google.com/p/google-glog/" target="_blank">Glog</a>, a library that implements application-level logging, 
+
+After all dependencies are installed, extract SDRJD source code:
+\verbatim
+$ tar xvfz sdrjd.tar.gz 
+\endverbatim
+
+This will create a folder named sdrjd with the following structure:
+\verbatim
+ |-sdrjd
+ |---build       <- where sdrjd is built
+ |---cmake       <- CMake-related files
+ |---conf        <- Configuration files. Each file represents one receiver.
+ |---data        <- Populate this folder with your captured data.
+ |---docs        <- Contains documentation-related files
+ |---install     <- Executables 
+ |---src         <- Source code folder
+ |-----algorithms
+ |-------conditioner
+ |-------data_type_adapter
+ |-------input_filter
+ |-------jammer_detectors
+ |-------libs
+ |-------resampler
+ |-------signal_source
+ |-----core
+ |-------interfaces
+ |-------libs
+ |-------receiver
+ |-----examples
+ |-----main
+\endverbatim
+
+You are now ready to build SDRJD by using <a href="http://www.cmake.org/" target="_blank">CMake</a> as building tool:
+\verbatim
+$ cd sdrjd/build
+$ cmake ../
+$ make
+\endverbatim
+
+If everything goes well, four new executables will be created at <tt>sdrjd/install</tt>, namely <tt>sdrjd</tt>, <tt>volk_gnsssdr-config-info</tt>, <tt>volk_gnsssdr_profile</tt> and <tt>jammer_msg_rx</tt>.
+
+You can create the documentation by doing:
+\verbatim
+$ make doc
+\endverbatim
+
+from the <tt>sdrjd/build</tt> folder. <a href="http://www.stack.nl/~dimitri/doxygen/" target="_blank">Doxygen</a> will generate HTML documentation that can be 
+retrieved pointing your browser of preference to <tt>sdrjd/build/docs/html/index.html</tt>.
+
+There are two more extra targets available. From the <tt>sdrjd/build</tt> folder:
+\verbatim
+$ make doc-clean
+\endverbatim
+will remove the content of previously-generated documentation and, if a LaTeX installation is detected in your system,
+\verbatim
+$ make pdfmanual
+\endverbatim
+will create a PDF manual at <tt>sdrjd/docs/SDRJD_manual.pdf</tt>. Please note that the PDF generation requires some fonts to be installed on the host system.
+In Ubuntu 12.10, those fonts do not come by default. You can install them by doing:
+\verbatim
+$ sudo apt-get install texlive-full
+\endverbatim
+and then run <tt> cmake ../</tt> and <tt>make pdfmanual</tt> again.
+
+\subsection debug_and_release Debug and Release builds
+
+By default, CMake will build the Release version, meaning that the compiler will generate a faster, optimized executable. This is the recommended build type when using
+a RF front-end and you need to attain real time. If working with a file (and thus without real-time constraints), you may want to obtain more information about
+the internals of the receiver, as well as more fine-grained logging. This can be done by building the Debug version, by doing:
+\verbatim
+$ cd sdrjd/build
+$ cmake -DCMAKE_BUILD_TYPE=Debug ../
+$ make
+\endverbatim
+
+\section using_sdrjd Using SDRJD
+
+With SDRJD, you can define you own receiver, work with captured raw data or from a RF front-end, dump into files intermediate signals, or tune every single algorithm used in the \ref signal_processing. All the configuration
+is done in a single file. Those configuration files reside at the <tt>sdrjd/conf</tt> folder. You can edit that files to fit your needs, or even better, define a new <tt>my_sdrjd.conf</tt> file with your own configuration. 
+This files are necessary in the execution of sdrjd with the <tt>--config_file</tt> flag pointing to your configuration file:
+\verbatim
+$ sdrjd --config_file=../conf/my_sdrjd.conf
+\endverbatim
+
+You can use a single configuration file for processing
+different data files, specifying the file to be processed with the <tt>--signal_source</tt> flag:
+\verbatim
+$ sdrjd --config_file=../conf/my_sdrjd.conf --signal_source=../data/my_captured_data.dat
+\endverbatim
+This will override the <tt>SignalSource.filename</tt> specified in the configuration file.
+
+You can get a complete list of available commandline flags by doing: 
+\verbatim
+$ sdrjd --help
+\endverbatim
+For general usage of commandline flags, see <a href="https://gflags.github.io/gflags/" target="_blank">how to use Google Commandline Flags</a>.
+
+\section control_plane Control plane
+SDRJD's main method initializes the logging library, processes the command line flags, if any, provided by the user and instantiates a sdrjd object. This class (its constructor is sdrjd::sdrjd()) implements the flowgraph engine of the SDR Jammer Detector.
+After instantiation, configuration parameters are loaded from config file, an then the main program calls the sdrjd::sdrjd_capture_and_process() method. This method is in charge of connecting all blocks of the flowgraph to a <a href="http://gnuradio.org/doc/doxygen/classgr_1_1top__block.html" target="_blank">topblock</a>, and connect message port of every signal processing block to \ref detector_msg_receiver class, initializing all detectors and run the flowgraph (calling to the run() method of the topblock).
+
+Blocks are identified by its role. This class knows which roles it has to instantiate and how to connect them. 
+It relies on the configuration to get the correct instances of the roles it needs and then it applies the connections between GNU Radio blocks to make the 
+graph ready to be started. The complexity related to managing the blocks and the data stream is handled by GNU Radio's <tt>gr::top_block</tt> class. SDRJD Flowgraph wraps 
+the <tt>gr::top_block</tt> instance so we can take advantage of the \ref sdr_block_factory, the configuration system and the processing blocks.
+
+\image html sdrjd_main_diagram.png
+\image latex sdrjd_main_diagram.png "SDRJD Main Diagram" width=16cm
+
+The Control Plane is in charge of creating a flowgraph according to the configuration and then managing the modules. Configuration allows users to define in an easy way their own
+custom receiver by specifying the flowgraph (type of signal source, algorithms to be used for each module, etc.). This can be achieved by simply mapping the names of the variables in the 
+modules with the names of the parameters in the configuration.
+
+\subsection configuration Configuration
+
+Properties are passed around within the program using the ConfigurationInterface class. There are two implementations of this interface: FileConfiguration and 
+InMemoryConfiguration. FileConfiguration reads the properties (pairs of property name and value) from a file and stores them internally. InMemoryConfiguration does 
+not read from a file; it remains empty after instantiation and property values and names are set using the set property method.  Classes that 
+need to read configuration parameters will receive instances of ConfigurationInterface from where they will fetch the values. For instance, parameters related 
+to SignalSource should look like this:
+
+\verbatim
+SignalSource.parameter1=value1
+SignalSource.parameter2=value2
+\endverbatim
+
+The name of these parameters can be anything but one reserved word: implementation. This parameter indicates in its value the name of the class that has to be instantiated 
+by the factory for that role. For instance, if our signal source is providing data already at baseband and thus we want to use the implementation Pass_Through for module SignalConditioner, the corresponding line in the 
+configuration file would be
+
+\verbatim
+SignalConditioner.implementation=Pass_Through
+\endverbatim
+
+Since the configuration is just a set of property names and values without any meaning or syntax, the system is very versatile and easily extendable. Adding new 
+properties to the system only implies modifications in the classes that will make use of these properties. In addition, the configuration files are not checked 
+against any strict syntax so it is always in a correct status (as long as it contains pairs of property names and values in <a href="http://en.wikipedia.org/wiki/INI_file" target="_blank">INI format</a>).
+
+\subsection sdr_block_factory SDR block factory
+Hence, the application defines a simple accessor class to fetch the configuration pairs of values and passes them to a factory class called SDRBlockFactory. 
+This factory decides, according to the configuration, which class needs to be instantiated and which parameters should be passed to the constructor. Hence, the factory 
+encapsulates the complexity of blocks' instantiation. With that approach, adding a new block that requires new parameters will be as simple as adding the block 
+class and modifying the factory to be able to instantiate it. This loose coupling between the blocks' implementations and the syntax of the configuration 
+enables extending the application capacities in a high degree.
+
+\subsection detector_msg_receiver Detector Message Receiver
+
+This class is in charge of handle the massages sended by all detector blocks. Once the class has received the information from all detectors is responsible for making the decision on the absence or presence of each type of jammer.
+In addition, it is responsible for sending the status of the detectors through a Linux queue messages and record this information in a log file. 
+The messages content the jammer detection information:
+\li Type of jammer: Pulsed, Wide Band (WB), Continuous Wave (CW) or Liear FM (LFM or chirp)
+\li Jammer RF frequency
+\li Jammer to Noise Ratio (JNR)
+\li Jammer test value
+\li Timestamp
+\li Samplecounter
+
+This class is also responsible for applying changes to the configuration of the flowgraph during run-time, dynamically restarting the detectors when the decission of every jammer detection is made. At this time, if <tt>SDRJD.enable_sweep</tt> is enable:
+\verbatim
+SDRJD.enable_sweep=true ; If is set to true enables the frequency sweep
+\endverbatim
+this is responsible of changing the RF frequency of the Source (this option has no sense if the source is a file source, use only with <tt>UhdSignalSource</tt> or <tt>OsmosdrSignalSource</tt>).
+The scanning frequency range is defined by the user in the configuration file:
+\verbatim
+SDRJD.start_freq_hz=2400.0e6 ; Initial frequency of the frequency sweep.
+                             ; Only avaliable if enable_sweep is set to true
+SDRJD.stop_freq_hz=2450.0e6 ; Final frequency of the frequency sweep.
+                            ; Only avaliable if enable_sweep is set to true
+\endverbatim
+The amount of time it takes from the decision of all jammer is received until them are reset can be controlled with the variable <tt>SDRJD.processing_delay_us</tt> in configuration file. This prevents overflows in the RF front-end on slow machines.
+
+
+\section signal_processing Signal Processing plane
+
+GNU Radio's class <tt>gr::basic_block</tt> is the abstract base class for all signal processing blocks, a bare abstraction of an entity that has a name and a set of 
+inputs and outputs. It is never instantiated directly; rather, this is the abstract parent class of both <tt>gr::hier_block2</tt>, which is a recursive container that 
+adds or removes processing or hierarchical blocks to the internal graph, and <tt>gr::block</tt>, which is the abstract base class for all the processing blocks. 
+
+A signal processing flow is constructed by creating a tree of hierarchical blocks, which at any level may also contain terminal nodes that actually implement signal 
+processing functions.
+
+Class <tt>gr::top_block</tt> is the top-level hierarchical block representing a flowgraph. It defines GNU Radio runtime functions used during the execution of the 
+program: run(), start(), stop(), wait(), etc. A a subclass called SDRBlockInterface is the common interface for all the SDRJD modules. It defines pure virtual 
+methods, that are required to be implemented by a derived class.
+
+Subclassing SDRBlockInterface, we defined interfaces for the SDRJD blocks. This hierarchy provides the definition of different 
+algorithms and different implementations, which will be instantiated according to the configuration. This strategy allows 
+multiple implementations sharing a common interface, achieving the objective of decoupling interfaces from implementations: it defines a family of algorithms, encapsulates each one, 
+and makes them interchangeable. Hence, we let the algorithm vary independently from the program that uses it.
+
+\subsection signal_source Signal Source
+
+The input of a software receiver are the raw bits that come out from the front-end's analog-to-digital converter (ADC). 
+Those bits can be read from a file stored in the hard disk or directly in real-time from a hardware device through USB or Ethernet buses. 
+
+The Signal Source module is in charge of implementing the hardware driver, that is, the portion of the code that communicates with the RF front-end and receives 
+the samples coming from the ADC. This communication is usually performed through USB or Ethernet buses. Since real-time processing requires a highly optimized 
+implementation of the whole receiver, this module also allows to read samples from a file stored in a hard disk, and thus processing without time constraints. 
+Relevant parameters of those samples are the intermediate frequency (or baseband I&Q components), the sampling rate and number of bits per sample, that must be 
+specified by the user in the configuration file.
+
+This module also performs bit-depth adaptation, since most of the existing RF front-ends provide samples quantized with 2 or 3 bits, while operations inside
+ the processor are performed on 32- or 64-bit words, depending on its architecture. Although there are implementations of the most intensive computational 
+ processes (mainly correlation) that take advantage of specific data types and architectures for the sake of 
+ efficiency, the approach is processor-specific and hardly portable. We suggest to keep signal samples in standard data types and letting the compiler 
+ select the best library version (implemented using SIMD or any other processor-specific technology) of the required routines for a given processor.
+ 
+Example: FileSignalSource
+
+The user can configure the receiver for reading from a file, setting in the configuration file the data file location, sample format, 
+and the sampling frequency and intermediate frequency at what the signal was originally captured.
+ 
+\verbatim
+;######### SIGNAL_SOURCE CONFIG ############
+SignalSource.implementation=File_Signal_Source
+SignalSource.filename=/path_to_data/my_capture.dat
+SignalSource.item_type=gr_complex ; Type and resolution for each of the signal samples.
+SignalSource.enable_throttle_control=true ; If true, emulates the sample delay based on 
+                                          ; the configured sampling frequency. 
+                                          ; Useful to recreate the captured signal duration.
+                                          ; Only available for file signal sources.
+SignalSource.sampling_frequency=4000000 ; Sampling frequency in [Hz]
+SignalSource.freq=1575420000 ; RF front-end center frequency in [Hz] 
+\endverbatim 
+
+Example: UhdSignalSource
+
+The user may prefer to use a UHD-compatible RF front-end and try real-time processing. For instance, for a USRP1 + DBSRX daughterboard, use:
+\verbatim
+;######### SIGNAL_SOURCE CONFIG ############
+SignalSource.implementation=UHD_Signal_Source
+SignalSource.item_type=gr_complex ; Type and resolution for each of the signal samples.
+SignalSource.sampling_frequency=4000000 ; Sampling frequency in [Hz]
+SignalSource.freq=1575420000 ; RF front-end center frequency in [Hz] 
+SignalSource.gain=60 ; Front-end gain in dB
+SignalSource.subdevice=B:0 ; UHD subdevice specification (for USRP1 use A:0 or B:0)
+\endverbatim
+
+Example: OsmosdrSignalSource
+
+The user may prefer to use a Osmosdr-compatible RF front-end and try real-time processing:
+\verbatim
+;######### SIGNAL_SOURCE CONFIG ############
+SignalSource.implementation=Osmosdr_Signal_Source
+SignalSource.AGC_enabled=false ; Enables the Automatic Gain Control. 
+                               ; Set to false for the Osmosdr_Signal_Source
+SignalSource.item_type=gr_complex ; Type and resolution for each of the signal samples.
+SignalSource.sampling_frequency=5000000 ; Sampling frequency in [Hz]
+SignalSource.freq_hz=2.412e9 ; RF front-end center frequency in [Hz]
+SignalSource.bandwidth=4.0e6 ; RF front-end bandwith in [Hz]
+SignalSource.num_seconds=0.5 ; Number of seconds of signal to be processed in a batch
+                             ; (keep this parameter low in slow machines!)
+SignalSource.gain=0 ; Front-end gain in dB
+SignalSource.rf_gain=20 ; RF front-end gain in dB
+SignalSource.if_gain=20 ; IF front-end gain in dB
+\endverbatim
+
+ \subsection signal_conditioner Signal Conditioner
+ The signal conditioner is in charge of resampling the signal and delivering a reference sample rate to the downstream processing blocks, acting as 
+ a facade between the signal source and the jammer detection blocks, providing a simplified interface to the input signal. 
+
+
+\subsection jammer_detectors Jammer Detectors
+A Jammer Detector is a signal processing block that makes decisions about presence or absence of a certain type of jammer. This decision is carried out based on the characteristics of the signal to be detected. To do this, for each type of jammer the detector must perform various mathematical operations on the captured signal. Finally each detector calculates a test statistic that is compared to a predetermined threshold for the decision on the presence or absence of jammer.
+
+Through this simple detection method one can obtain some interesting results. We tested one of the algorithms to be presented in the following sections (namely Pulsed Jammer detector) in 4 different scenarios:
+
+\image html scenarios.png
+\image latex scenarios.png "Tested scenarios" width=12cm
+
+To perform the test cases we have captured 10 seconds of signal on each of the four scenarios detailed above with a sampling rate of 5 Msps and dumped data to a file for later post-processing.
+
+The post-processing has been carried out in Matlab by applying the detection algorithm developed. Probabilities obtained for each scenario are:
+
+\image html results.png
+\image latex results_pdf.png "Results" width=10cm
+
+These results show that probability of detection is optimal (95-99%), but probability of false alarm is raised slightly.
+
+In order to improve the probability of false alarm, in most detection systems, every test is performed several times over blocks of consecutive samples to make a final decision. The random number of times algorithm is repeated until final decision is made is controlled by an algorithm called Tong Detector Algorithm. We have implemented a modified version of this algorithm:
+
+\image html Tong_algorithm.png
+\image latex Tong_algorithm.png "Modified Tong Algorithm" width=10cm
+
+The abstract class JammerDetectorInterface represents an interface to a detector SDR block. There are implementations for various types of jammers.
+
+The source code of all the available Jammer Detector algorithms is located at:
+ 
+ \verbatim
+  |-sdrjd
+  |---src
+  |-----algorithms
+  |-------jammer_detectors
+  |---------adapters          <- Adapters of the processing blocks to a JammerDetectorInterface
+  |---------gnuradio_blocks   <- Signal processing blocks implementation
+ \endverbatim
+
+The user can select a given implementation for the algorithm to be used in each detector block, as well as their parameters, in the configuration file:
+\verbatim
+;######### JAMMER DETECTOR CONFIG ######
+JammerDetector1.implementation=Pulsed_Jammer_Detector 
+                             ; Use [Pulsed_Jammer_Detector] for JammerDetector1
+                             ; use [WB_Jammer_Detector] for JammerDetector2
+                             ; use [CW_Jammer_Detector] for JammerDetector3
+                             ; use [LFM_Jammer_Detector] for JammerDetector4
+JammerDetector1.Threshold=2000 ; Set the threshod for the decision algorithm
+JammerDetector1.block_length=500 ; Number of samples to be processed in every 
+                                 ; iteration of the algorithm
+JammerDetector1.fft_samples=8 ; Number of samples to make FFT in the spectogram 
+                              ; of the Pulsed_Jammer_Detector algorithm
+                              ; Avaliable in [Pulsed_Jammer_Detector] and [LFM_Jammer_Detector]
+JammerDetector1.noise_estimations=1000 ; Number of iterations for the initial Noise Power estimation.
+                                       ; Only not avaliable in [CW_Jammer_Detector]
+JammerDetector1.dump=false ; Dumps intermediate data of the algorithm to a file. 
+                           ; Not avaliable in this version
+JammerDetector1.dump_filename=/path_to_sdrjd/sdrjd/install/data/pulsed_detector.dat 
+                                            ; Filename for dumped data.
+                                            ; Only avaliable if dump is set to true. 
+                                            ; Not avaliable in this version
+JammerDetector1.A=15 ; Value of A parameter of Tong detection algorithm
+JammerDetector1.B=3 ; Value of B parameter of Tong detection algorithm
+JammerDetector1.max_dwells=25 ; Maximum number of iterations for the modified
+                              ; Tong detection algorithm
+\endverbatim
+
+Detected jammers are calssified in \ref pulsed, \ref wideband, \ref continuous_wave and \ref chirp. Explanations of each type of jammers can be found in the following sections.
+
+\subsubsection pulsed Pulsed Jammer Detector
+A pulsed signal is an intermittent RF signal that have several harmonic components slitted in the entire service band, causing a saturation in the front-end amplifiers, mixers and ADCs.
+
+The spectrum of this signal is similar to other wide band signals as we can see in next figure (In blue, the channel spectrum in absence of jammer signals. In green, channel spectrum in presence of pulsed jamming signal):
+
+\image html Pulsed_spectrum.png
+\image latex Pulsed_spectrum.png "Pulsed Signal Spectrum" width=16cm
+
+
+A main feature of such signals is that its <a href="https://en.wikipedia.org/wiki/Spectrogram" target="_blank">spectogram</a> has a very marked pattern, as can be seen in the analysis of the captured signal we conducted in Matlab:
+
+\image html pulsed_spectrogram.png
+\image latex pulsed_spectrogram.png "Spectrogram of Pulsed Signal" width=8cm
+
+Based on this characteristic of the signal we have implemented the following algorithm:
+
+Pulsed Jammer Detection strategy
+<ol>
+<li> Estimate the initial noise floor power
+<li> Calculate spectrogram
+<li> Project in time domain
+<li> Mean computation
+<li> Extract the mean and binarize signal (x)
+<li> FFT of binary signal to extract maximum value and compare with threshold
+<li> Declare positive or negative detection using a message
+</ol>
+
+
+\subsubsection wideband Wide Band Jammer Detector
+A wide band jamming signal is a pseudorandom noise-like signal with instantaneous bandwidth greater than 2 MHz that overlaps the service band, causing an increase in the noise power within the band of interest.
+
+The spectrum of this kind of signals is flat in the frequency band of interest, and it does not present any kind of firm that can differentiate from other jammers as we can see in next figure (In blue, the channel spectrum in absence of jammer signals. In green, channel spectrum in presence of wide band jamming signal):
+
+
+\image html WB_spectrum.png
+\image latex WB_spectrum.png "Wide Band Signal Spectrum" width=16cm
+
+Based on this characteristic of the signal we have implemented the following algorithm:
+
+Wide Band Noise Jammer Detection strategy
+<ol>
+<li> Estimate the initial noise floor power
+<li> Calculate Power of incoming signal
+<li> Compare Statistic (Incoming Power/Noise Floor Power) with threshold
+<li> Declare positive or negative detection using a message
+</ol>
+
+\subsubsection continuous_wave Continuous Wave Jammer Detector
+A continuous wave jammer signal is an RF sinusoidal narrowband signal with constant amplitude and constant frequency.
+The spectrum of such signals presents a very marked peak as can be seen in the following figure (In green, the channel spectrum in absence of jammer signals. In blue, channel spectrum in presence of continuous wave jamming signal):
+
+\image html CW_spectrum.png
+\image latex CW_spectrum.png "Continuous Wave Signal Spectrum" width=16cm
+
+This feature has allowed us to develop the following algorithm:
+
+Continuous Wave Jammer Detection strategy
+<ol>
+<li> Calculate <a href="https://en.wikipedia.org/wiki/Spectral_density_estimation#Periodogram" target="_blank">Periodogram</a>
+<li> Calculate the maximum
+<li> Calculate noise floor
+<li> Statistic = Maximum/Noise Floor
+<li> Compare with threshold
+<li> Declare positive or negative detection using a message
+</ol>
+
+\subsubsection chirp LFM Chirp Jammer Detector
+A linear frequency modulated (LFM) chirp jammer signal is an RF sinusoidal signal with constant amplitude and variable linear frequency that sweeps service band frequencies.
+
+The spectrum of this signal presents several peaks as we can see in next figure (In blue, the channel spectrum in absence of jammer signals. In green, channel spectrum in presence of pulsed jamming signal):
+
+\image html LFM_spectrum.png
+\image latex LFM_spectrum.png "Linear FM Signal Spectrum" width=16cm
+
+
+A main feature of such signals is that its <a href="https://en.wikipedia.org/wiki/Spectrogram" target="_blank">spectogram</a> has a very marked pattern (similar but not equal to pulsed signals), as can be seen in the analysis of the captured signal we conducted in Matlab:
+
+\image html lfm_spectrogram.png
+\image latex lfm_spectrogram.png "Spectrogram of Linear FM Signal" width=8cm
+
+Based on this characteristic of the signal we have implemented the following algorithm:
+
+Pulsed Jammer Detection strategy
+<ol>
+<li> Estimate the initial noise floor power
+<li> Calculate spectrogram
+<li> Estimation of the shape of instantaneous frequency
+<li> Derivative of the shape of instantaneous frequency
+<li> Extract the minimum of the derivative
+<li> Extract relative frequency of positive samples between minimums and compare with threshold
+<li> Declare positive or negative detection using a message
+</ol>
+
+
+\section license About the software license
+SDRJD is released under the <a href="http://www.gnu.org/licenses/gpl.html" target="_blank">General Public License (GPL) v3</a>, thus securing practical usability, inspection, 
+and continuous improvement by the research community, allowing the discussion based on tangible code and the analysis of results obtained with real signals. 
+The GPL implies that:
+
+\li Copies may be distributed free of charge or for money, but the source code has to be shipped or provided free of charge (or at cost price) on demand. The receiver of the source code has the same rights meaning he can share copies free of charge or resell.
+\li The licensed material may be analyzed or modified.
+\li Modified material may be distributed under the same licensing terms but <b>do not</b> have to be distributed.
+
+That means that modifications only have to be made available to the public if distribution happens. So it is perfectly fine to take the SDRJD source code, modify it heavily and use it in a not distributed application / library. This is how companies like Google can run their own patched versions of Linux for example.
+
+But what this also means is that non-GPL code cannot use GPL code. This means that you cannot modify / use SDRJD, blend it with non-GPL code, and make money with the resulting software. You cannot distribute the resulting software under a non-disclosure agreement or contract. Distributors under the GPL also grant a license for any of their patents practiced by the software, to practice those patents in GPL software. You can sell a device that runs with SDRJD, but if you distribute the code, it has to remain under GPL.
+
+Enjoy SDRJD! 
+
+The Developer Team.
+*/
